@@ -10,6 +10,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { IconUpload, IconDownload } from "@tabler/icons-react";
+import { Slider } from "./components/ui/slider";
 
 const ColorPalette = {
 	Monochrome: "none",
@@ -66,23 +67,34 @@ function generatePalettes() {
 
 const colorPalettes = generatePalettes();
 
+const colorPaletteNames: Record<ColorPaletteValue, string> = {
+	[ColorPalette.Monochrome]: "Monochrome",
+	[ColorPalette.Grey2Bit]: "Grey 2-Bit",
+	[ColorPalette.Grey4Bit]: "Grey 4-Bit",
+	[ColorPalette.Grey8Bit]: "Grey 8-Bit",
+	[ColorPalette.Color3Bit]: "Color 3-Bit",
+	[ColorPalette.Color4Bit]: "Color 4-Bit",
+	[ColorPalette.ColorFull]: "Color Full",
+};
+
 interface ASCIIGeneratorProps {
 	imageUrl?: string;
 }
 
 export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 	// State for settings
-	const [charSet, setCharSet] = useState(defaultCharSet);
+	const [charSet] = useState(defaultCharSet);
 	const [size, setSize] = useState(200);
-	const [charSamples, setCharSamples] = useState(1);
+	const [charSamples] = useState(1);
 	const [contrast, setContrast] = useState(0);
 	const [brightness, setBrightness] = useState(0);
-	const [alpha, setAlpha] = useState(0);
+	const [alpha] = useState(0);
 	const [colorPalette, setColorPalette] = useState<ColorPaletteValue>(
 		ColorPalette.Grey2Bit
 	);
 	const [bgColor, setBgColor] = useState("#ffffff");
 	const [charColor, setCharColor] = useState("#000000");
+	const [charTint, setCharTint] = useState(1); // Multiplier for char color brightness (0-2)
 	const [transparentBg, setTransparentBg] = useState(false);
 	const [exportScale, setExportScale] = useState(6);
 
@@ -95,6 +107,22 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const outputContainerRef = useRef<HTMLDivElement>(null);
+
+	// Helper functions for color conversion
+	const hexToRgb = useCallback((hex: string): number[] => {
+		const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+		return result
+			? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
+			: [0, 0, 0];
+	}, []);
+
+	const rgbaToRgbArray = useCallback((rgbaStr: string): number[] => {
+		const match = rgbaStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+		if (match) {
+			return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+		}
+		return [0, 0, 0];
+	}, []);
 
 	// Helper: analyze a single character
 	const analyzeChar = useCallback((char: string, charSamples: number) => {
@@ -178,14 +206,26 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		return minChar;
 	}, [normalizedCharRegions]);
 
-	// Convert color array to RGBA string
+	// Convert color array to RGBA string with optional char tint
 	const arrayToRgba = useCallback((color: number[]): string => {
 		const r = color[3] > 0 ? Math.floor(color[0]) : 255;
 		const g = color[3] > 0 ? Math.floor(color[1]) : 255;
 		const b = color[3] > 0 ? Math.floor(color[2]) : 255;
 		const a = Math.max(0, Math.min(1, color[3] / 255 + alpha));
+
+		// Apply char tint if not monochrome
+		if (colorPalette !== ColorPalette.Monochrome && charTint !== 1) {
+			// Parse charColor to RGB
+			const charRgb = hexToRgb(charColor);
+			// Blend original color with char color based on tint value
+			const tintedR = Math.min(255, Math.floor(r * charTint + charRgb[0] * (1 - charTint)));
+			const tintedG = Math.min(255, Math.floor(g * charTint + charRgb[1] * (1 - charTint)));
+			const tintedB = Math.min(255, Math.floor(b * charTint + charRgb[2] * (1 - charTint)));
+			return `rgba(${tintedR},${tintedG},${tintedB},${a})`;
+		}
+
 		return `rgba(${r},${g},${b},${a})`;
-	}, [alpha]);
+	}, [alpha, colorPalette, charTint, charColor, hexToRgb]);
 
 	// Get character color based on palette
 	const getCharColor = useCallback((color: number[]): string => {
@@ -400,21 +440,6 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		link.click();
 	};
 
-	const hexToRgb = (hex: string): number[] => {
-		const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-		return result
-			? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 16)]
-			: [0, 0, 0];
-	};
-
-	const rgbaToRgbArray = (rgbaStr: string): number[] => {
-		const match = rgbaStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-		if (match) {
-			return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
-		}
-		return [0, 0, 0];
-	};
-
 	// Generate ASCII output
 	const asciiOutput = useMemo(() => {
 		const { width, height } = imageDimensions;
@@ -464,9 +489,6 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			<aside className="w-72 border-r border-border bg-muted/30 flex flex-col overflow-y-auto">
 				<div className="p-4 border-b border-border">
 					<h1 className="text-lg font-semibold">ASCII Generator</h1>
-					<p className="text-xs text-muted-foreground mt-1">
-						Convert images to ASCII art
-					</p>
 				</div>
 
 				<div className="p-4 space-y-5 flex-1">
@@ -510,13 +532,12 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 							<Label htmlFor="size">Width (chars)</Label>
 							<span className="text-xs text-muted-foreground">{size}</span>
 						</div>
-						<input
+						<Slider
 							id="size"
-							type="range"
-							min="50"
-							max="500"
-							value={size}
-							onChange={(e) => setSize(parseInt(e.target.value))}
+							min={50}
+							max={300}
+							value={[size]}
+							onValueChange={(values) => setSize(Array.isArray(values) ? values[0] : values)}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
@@ -545,14 +566,13 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 							<Label htmlFor="contrast">Contrast</Label>
 							<span className="text-xs text-muted-foreground">{contrast.toFixed(2)}</span>
 						</div>
-						<input
+						<Slider
 							id="contrast"
-							type="range"
-							min="-1"
-							max="1"
-							step="0.01"
-							value={contrast}
-							onChange={(e) => setContrast(parseFloat(e.target.value))}
+							min={-1}
+							max={1}
+							step={0.01}
+							value={[contrast]}
+							onValueChange={(values) => setContrast(Array.isArray(values) ? values[0] : values)}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
@@ -563,14 +583,13 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 							<Label htmlFor="brightness">Brightness</Label>
 							<span className="text-xs text-muted-foreground">{brightness.toFixed(2)}</span>
 						</div>
-						<input
+						<Slider
 							id="brightness"
-							type="range"
-							min="-1"
-							max="1"
-							step="0.01"
-							value={brightness}
-							onChange={(e) => setBrightness(parseFloat(e.target.value))}
+							min={-1}
+							max={1}
+							step={0.01}
+							value={[brightness]}
+							onValueChange={(values) => setBrightness(Array.isArray(values) ? values[0] : values)}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
@@ -599,26 +618,50 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					</div> */}
 
 					{/* Color Palette */}
-					{/* <div className="space-y-2">
+					<div className="space-y-2">
 						<Label htmlFor="palette">Color Palette</Label>
 						<Select
 							value={colorPalette}
 							onValueChange={(value) => setColorPalette(value as ColorPaletteValue)}
 						>
 							<SelectTrigger id="palette" className="w-full">
-								<SelectValue />
+								<SelectValue>{colorPaletteNames[colorPalette]}</SelectValue>
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value={ColorPalette.Monochrome}>Monochrome</SelectItem>
 								<SelectItem value={ColorPalette.Grey2Bit}>Grey 2-Bit</SelectItem>
+								<SelectItem value={ColorPalette.ColorFull}>Color Full</SelectItem>
 								<SelectItem value={ColorPalette.Grey4Bit}>Grey 4-Bit</SelectItem>
 								<SelectItem value={ColorPalette.Grey8Bit}>Grey 8-Bit</SelectItem>
 								<SelectItem value={ColorPalette.Color3Bit}>Color 3-Bit</SelectItem>
 								<SelectItem value={ColorPalette.Color4Bit}>Color 4-Bit</SelectItem>
-								<SelectItem value={ColorPalette.ColorFull}>Color Full</SelectItem>
 							</SelectContent>
 						</Select>
-					</div> */}
+					</div>
+
+					{/* Char Tint - only visible when color palette is active */}
+					{colorPalette !== ColorPalette.Monochrome && (
+						<div className="space-y-2">
+							<div className="flex items-center justify-between">
+								<Label htmlFor="chartint" title="Blend character color with palette colors">
+									Char Tint
+								</Label>
+								<span className="text-xs text-muted-foreground">{charTint.toFixed(2)}</span>
+							</div>
+							<Slider
+								id="chartint"
+								min={0}
+								max={2}
+								step={0.05}
+								value={[charTint]}
+								onValueChange={(values) => setCharTint(Array.isArray(values) ? values[0] : values)}
+								className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
+							/>
+							<p className="text-[10px] text-muted-foreground">
+								{charTint < 1 ? "Blend with character color (darker)" : charTint > 1 ? "Boost brightness" : "Original colors"}
+							</p>
+						</div>
+					)}
 
 					{/* Transparent Background */}
 					<div className="flex items-center gap-2">
@@ -643,7 +686,7 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 								type="color"
 								value={bgColor}
 								onChange={(e) => setBgColor(e.target.value)}
-								className="h-8 w-14 rounded cursor-pointer"
+								className="h-8 w-14 rounded-lg cursor-pointer"
 							/>
 							<Input
 								value={bgColor}
@@ -678,14 +721,13 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 							<Label htmlFor="export-scale">Export Scale</Label>
 							<span className="text-xs text-muted-foreground">{exportScale}x</span>
 						</div>
-						<input
+						<Slider
 							id="export-scale"
-							type="range"
-							min="1"
-							max="10"
-							step="1"
-							value={exportScale}
-							onChange={(e) => setExportScale(parseInt(e.target.value))}
+							min={1}
+							max={10}
+							step={1}
+							value={[exportScale]}
+							onValueChange={(values) => setExportScale(Array.isArray(values) ? values[0] : values)}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
