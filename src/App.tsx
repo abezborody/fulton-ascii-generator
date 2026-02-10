@@ -96,7 +96,7 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 	const [charColor, setCharColor] = useState("#000000");
 	const [charTint, setCharTint] = useState(1); // Multiplier for char color brightness (0-2)
 	const [transparentBg, setTransparentBg] = useState(false);
-	const [exportScale, setExportScale] = useState(6);
+	const [exportScale, setExportScale] = useState(2);
 
 	// State for image and processing data - using state for proper reactivity
 	const [imageSrc, setImageSrc] = useState(imageUrl || "");
@@ -719,7 +719,7 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="export-scale">Export Scale</Label>
-							<span className="text-xs text-muted-foreground">{exportScale}x</span>
+							<span className="text-xs text-muted-foreground">x{exportScale}</span>
 						</div>
 						<Slider
 							id="export-scale"
