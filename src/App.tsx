@@ -85,6 +85,8 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 	// State for settings
 	const [charSet] = useState(defaultCharSet);
 	const [size, setSize] = useState(200);
+	// Store fixed canvas dimensions for consistent export output
+	const [fixedCanvasSize, setFixedCanvasSize] = useState<{ width: number; height: number } | null>(null);
 	const [charSamples] = useState(1);
 	const [contrast, setContrast] = useState(0);
 	const [brightness, setBrightness] = useState(0);
@@ -298,6 +300,16 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			const baseImageAspectRatio = img.width / img.height;
 			const height = Math.floor(width / baseImageAspectRatio);
 
+			// Save the canvas dimensions on first load (for consistent export dimensions)
+			if (fixedCanvasSize === null) {
+				const charWidth = 4;
+				const charHeight = 4;
+				setFixedCanvasSize({
+					width: width * charWidth * exportScale,
+					height: height * charHeight * exportScale,
+				});
+			}
+
 			setImageDimensions({ width, height });
 
 			const canvas = document.createElement("canvas");
@@ -360,7 +372,7 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			setValueMap(newValueMap);
 			setColorMap(newColorMap);
 		};
-	}, [imageSrc, size, charSamples]);
+	}, [imageSrc, size, charSamples, fixedCanvasSize, exportScale]);
 
 	// Trigger image reload when size or charSamples changes
 	useEffect(() => {
@@ -374,6 +386,8 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			const reader = new FileReader();
 			reader.onload = (event) => {
 				setImageSrc(event.target?.result as string);
+				// Reset fixedCanvasSize when a new image is loaded
+				setFixedCanvasSize(null);
 			};
 			reader.readAsDataURL(file);
 		}
@@ -382,13 +396,14 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 	// Handle download
 	const handleDownload = () => {
 		const { width, height } = imageDimensions;
-		if (width === 0 || height === 0 || normalizedMap.length === 0) return;
+		if (width === 0 || height === 0 || normalizedMap.length === 0 || fixedCanvasSize === null) return;
 
-		const charWidth = 4;
-		const charHeight = 4;
+		// Calculate char size to fit the fixed canvas dimensions
+		const scaledCharWidth = fixedCanvasSize.width / width / exportScale;
+		const scaledCharHeight = fixedCanvasSize.height / height / exportScale;
 
-		const canvasWidth = width * charWidth * exportScale;
-		const canvasHeight = height * charHeight * exportScale;
+		const canvasWidth = fixedCanvasSize.width;
+		const canvasHeight = fixedCanvasSize.height;
 
 		const canvas = document.createElement("canvas");
 		canvas.width = canvasWidth;
@@ -405,7 +420,7 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		}
 
 		// Set font
-		const fontSize = 4 * exportScale;
+		const fontSize = scaledCharWidth * exportScale;
 		ctx.font = `${fontSize}px 'Courier New', monospace`;
 		ctx.textBaseline = "top";
 
@@ -426,8 +441,8 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					ctx.fillStyle = charColor;
 				}
 
-				const x = cellX * charWidth * exportScale;
-				const y = cellY * charHeight * exportScale;
+				const x = cellX * scaledCharWidth * exportScale;
+				const y = cellY * scaledCharHeight * exportScale;
 				ctx.fillText(char, x, y);
 			}
 		}
@@ -472,11 +487,15 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			}
 		}
 
+		const containerWidth = 800;
+		const cellSize = containerWidth / width;
+
 		return (
 			<div className="ascii-grid" style={{
 				backgroundColor: transparentBg ? "transparent" : bgColor,
 				"--width": width.toString(),
 				"--height": height.toString(),
+				"--cell-size": `${cellSize}px`,
 			} as React.CSSProperties}>
 				{cells}
 			</div>
@@ -757,16 +776,16 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			<style>{`
         .ascii-grid {
           display: grid;
-          grid-template-columns: repeat(var(--width, 200), 4px);
-          grid-template-rows: repeat(var(--height, 200), 4px);
+          grid-template-columns: repeat(var(--width, 200), var(--cell-size, 4px));
+          grid-template-rows: repeat(var(--height, 200), var(--cell-size, 4px));
           font-family: 'Courier New', monospace;
-          font-size: 4px;
+          font-size: var(--cell-size, 4px);
           line-height: 1;
         }
         .ascii-cell {
           display: block;
-          width: 4px;
-          height: 4px;
+          width: var(--cell-size, 4px);
+          height: var(--cell-size, 4px);
           overflow: hidden;
         }
       `}</style>
