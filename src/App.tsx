@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo, useReducer } from "react";
+import { useCallback, useRef, useEffect, useMemo, useReducer } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -138,15 +138,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
 	}
 }
 
-// Custom hook for debouncing a value
-function useDebouncedValue<T>(value: T, delay: number): T {
-	const [debouncedValue, setDebouncedValue] = useState(value);
-	useEffect(() => {
-		const handler = setTimeout(() => setDebouncedValue(value), delay);
-		return () => clearTimeout(handler);
-	}, [value, delay]);
-	return debouncedValue;
-}
 
 export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 	const [state, dispatch] = useReducer(appReducer, {
@@ -162,26 +153,6 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		imageSrc: imageUrl || "",
 		fixedCanvasSize: null,
 	});
-
-	// Local state for immediate slider display (updated instantly, debounced before dispatch)
-	const [localSize, setLocalSize] = useState(state.size);
-	const [localContrast, setLocalContrast] = useState(state.contrast);
-	const [localBrightness, setLocalBrightness] = useState(state.brightness);
-	const [localCharTint, setLocalCharTint] = useState(state.charTint);
-	const [localExportScale, setLocalExportScale] = useState(state.exportScale);
-
-	// Debounced values that trigger expensive re-computation
-	const debouncedSize = useDebouncedValue(localSize, 100);
-	const debouncedContrast = useDebouncedValue(localContrast, 100);
-	const debouncedBrightness = useDebouncedValue(localBrightness, 100);
-	const debouncedCharTint = useDebouncedValue(localCharTint, 100);
-	const debouncedExportScale = useDebouncedValue(localExportScale, 100);
-
-	useEffect(() => { dispatch({ type: "setSize", payload: debouncedSize }); }, [debouncedSize]);
-	useEffect(() => { dispatch({ type: "setContrast", payload: debouncedContrast }); }, [debouncedContrast]);
-	useEffect(() => { dispatch({ type: "setBrightness", payload: debouncedBrightness }); }, [debouncedBrightness]);
-	useEffect(() => { dispatch({ type: "setCharTint", payload: debouncedCharTint }); }, [debouncedCharTint]);
-	useEffect(() => { dispatch({ type: "setExportScale", payload: debouncedExportScale }); }, [debouncedExportScale]);
 
 	// Processing data stored in refs (not state) to avoid re-renders during image processing
 	const valueMapRef = useRef<number[][]>([]);
@@ -693,14 +664,14 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="size">Width (chars)</Label>
-							<span className="text-xs text-muted-foreground">{localSize}</span>
+							<span className="text-xs text-muted-foreground">{state.size}</span>
 						</div>
 						<Slider
 							id="size"
 							min={50}
 							max={300}
-							value={[localSize]}
-							onValueChange={(values) => setLocalSize(Array.isArray(values) ? values[0] : values)}
+							value={[state.size]}
+							onValueChange={(values) => dispatch({ type: "setSize", payload: Array.isArray(values) ? values[0] : values })}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
@@ -709,15 +680,15 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="contrast">Contrast</Label>
-							<span className="text-xs text-muted-foreground">{localContrast.toFixed(2)}</span>
+							<span className="text-xs text-muted-foreground">{state.contrast.toFixed(2)}</span>
 						</div>
 						<Slider
 							id="contrast"
 							min={-1}
 							max={1}
 							step={0.01}
-							value={[localContrast]}
-							onValueChange={(values) => setLocalContrast(Array.isArray(values) ? values[0] : values)}
+							value={[state.contrast]}
+							onValueChange={(values) => dispatch({ type: "setContrast", payload: Array.isArray(values) ? values[0] : values })}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
@@ -726,15 +697,15 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="brightness">Brightness</Label>
-							<span className="text-xs text-muted-foreground">{localBrightness.toFixed(2)}</span>
+							<span className="text-xs text-muted-foreground">{state.brightness.toFixed(2)}</span>
 						</div>
 						<Slider
 							id="brightness"
 							min={-1}
 							max={1}
 							step={0.01}
-							value={[localBrightness]}
-							onValueChange={(values) => setLocalBrightness(Array.isArray(values) ? values[0] : values)}
+							value={[state.brightness]}
+							onValueChange={(values) => dispatch({ type: "setBrightness", payload: Array.isArray(values) ? values[0] : values })}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
@@ -768,19 +739,19 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 								<Label htmlFor="chartint" title="Blend character color with palette colors">
 									Char Tint
 								</Label>
-								<span className="text-xs text-muted-foreground">{localCharTint.toFixed(2)}</span>
+								<span className="text-xs text-muted-foreground">{state.charTint.toFixed(2)}</span>
 							</div>
 							<Slider
 								id="chartint"
 								min={0}
 								max={2}
 								step={0.05}
-								value={[localCharTint]}
-								onValueChange={(values) => setLocalCharTint(Array.isArray(values) ? values[0] : values)}
+								value={[state.charTint]}
+								onValueChange={(values) => dispatch({ type: "setCharTint", payload: Array.isArray(values) ? values[0] : values })}
 								className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 							/>
 							<p className="text-[10px] text-muted-foreground">
-								{localCharTint < 1 ? "Blend with character color (darker)" : localCharTint > 1 ? "Boost brightness" : "Original colors"}
+								{state.charTint < 1 ? "Blend with character color (darker)" : state.charTint > 1 ? "Boost brightness" : "Original colors"}
 							</p>
 						</div>
 					)}
@@ -841,15 +812,15 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="export-scale">Export Scale</Label>
-							<span className="text-xs text-muted-foreground">x{localExportScale}</span>
+							<span className="text-xs text-muted-foreground">x{state.exportScale}</span>
 						</div>
 						<Slider
 							id="export-scale"
 							min={1}
 							max={10}
 							step={1}
-							value={[localExportScale]}
-							onValueChange={(values) => setLocalExportScale(Array.isArray(values) ? values[0] : values)}
+							value={[state.exportScale]}
+							onValueChange={(values) => dispatch({ type: "setExportScale", payload: Array.isArray(values) ? values[0] : values })}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
