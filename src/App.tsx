@@ -93,7 +93,6 @@ interface AppState {
 	transparentBg: boolean;
 	exportScale: number;
 	imageSrc: string;
-	fixedCanvasSize: { width: number; height: number } | null;
 }
 
 type AppAction =
@@ -106,13 +105,12 @@ type AppAction =
 	| { type: "setCharTint"; payload: number }
 	| { type: "setTransparentBg"; payload: boolean }
 	| { type: "setExportScale"; payload: number }
-	| { type: "setImageSrc"; payload: string }
-	| { type: "setFixedCanvasSize"; payload: { width: number; height: number } | null };
+	| { type: "setImageSrc"; payload: string };
 
 function appReducer(state: AppState, action: AppAction): AppState {
 	switch (action.type) {
 		case "setSize":
-			return { ...state, size: action.payload, fixedCanvasSize: null };
+			return { ...state, size: action.payload };
 		case "setContrast":
 			return { ...state, contrast: action.payload };
 		case "setBrightness":
@@ -130,9 +128,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
 		case "setExportScale":
 			return { ...state, exportScale: action.payload };
 		case "setImageSrc":
-			return { ...state, imageSrc: action.payload, fixedCanvasSize: null };
-		case "setFixedCanvasSize":
-			return { ...state, fixedCanvasSize: action.payload };
+			return { ...state, imageSrc: action.payload };
 		default:
 			return state;
 	}
@@ -151,7 +147,6 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		transparentBg: false,
 		exportScale: 2,
 		imageSrc: imageUrl || "",
-		fixedCanvasSize: null,
 	});
 
 	// Processing data stored in refs (not state) to avoid re-renders during image processing
@@ -347,19 +342,6 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			const baseImageAspectRatio = img.width / img.height;
 			const height = Math.floor(width / baseImageAspectRatio);
 
-			// Save the canvas dimensions on first load (for consistent export dimensions)
-			if (state.fixedCanvasSize === null) {
-				const charWidth = 4;
-				const charHeight = 4;
-				dispatch({
-					type: "setFixedCanvasSize",
-					payload: {
-						width: width * charWidth * state.exportScale,
-						height: height * charHeight * state.exportScale,
-					},
-				});
-			}
-
 			imageDimensionsRef.current = { width, height };
 
 			const canvas = document.createElement("canvas");
@@ -406,8 +388,7 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			colorMapRef.current = newColorMap;
 			forceUpdate();
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.imageSrc, state.size, state.exportScale, state.fixedCanvasSize === null, charSamples]);
+	}, [state.imageSrc, state.size, charSamples]);
 
 	// Trigger image reload when dependencies change
 	useEffect(() => {
@@ -484,13 +465,15 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 	// Handle PNG download
 	const handleDownloadPng = () => {
 		const { width, height } = imageDimensionsRef.current;
-		if (width === 0 || height === 0 || normalizedMap.length === 0 || state.fixedCanvasSize === null) return;
+		if (width === 0 || height === 0 || normalizedMap.length === 0) return;
 
-		const scaledCharWidth = state.fixedCanvasSize.width / width / state.exportScale;
-		const scaledCharHeight = state.fixedCanvasSize.height / height / state.exportScale;
+		const baseFontSize = 12;
+		const fontSize = baseFontSize * state.exportScale;
+		const cellWidth = fontSize;
+		const cellHeight = fontSize;
 
-		const canvasWidth = state.fixedCanvasSize.width;
-		const canvasHeight = state.fixedCanvasSize.height;
+		const canvasWidth = width * cellWidth;
+		const canvasHeight = height * cellHeight;
 
 		const canvas = document.createElement("canvas");
 		canvas.width = canvasWidth;
@@ -507,8 +490,7 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		}
 
 		// Set font
-		const fontSize = scaledCharWidth * state.exportScale;
-		ctx.font = `${fontSize}px 'Courier New', monospace`;
+		ctx.font = `500 ${fontSize}px 'Courier New', monospace`;
 		ctx.textBaseline = "top";
 
 		// Draw each character
@@ -526,9 +508,7 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					ctx.fillStyle = state.charColor;
 				}
 
-				const x = cellX * scaledCharWidth * state.exportScale;
-				const y = cellY * scaledCharHeight * state.exportScale;
-				ctx.fillText(char, x, y);
+				ctx.fillText(char, cellX * cellWidth, cellY * cellHeight);
 			}
 		}
 
