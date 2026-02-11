@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, useReducer } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { IconUpload, IconDownload } from "@tabler/icons-react";
+import { IconUpload, IconDownload, IconFileTypeSvg } from "@tabler/icons-react";
 import { Slider } from "./components/ui/slider";
 
 const ColorPalette = {
@@ -81,34 +81,120 @@ interface ASCIIGeneratorProps {
 	imageUrl?: string;
 }
 
+// State types
+interface AppState {
+	size: number;
+	contrast: number;
+	brightness: number;
+	colorPalette: ColorPaletteValue;
+	bgColor: string;
+	charColor: string;
+	charTint: number;
+	transparentBg: boolean;
+	exportScale: number;
+	imageSrc: string;
+	fixedCanvasSize: { width: number; height: number } | null;
+}
+
+type AppAction =
+	| { type: "setSize"; payload: number }
+	| { type: "setContrast"; payload: number }
+	| { type: "setBrightness"; payload: number }
+	| { type: "setColorPalette"; payload: ColorPaletteValue }
+	| { type: "setBgColor"; payload: string }
+	| { type: "setCharColor"; payload: string }
+	| { type: "setCharTint"; payload: number }
+	| { type: "setTransparentBg"; payload: boolean }
+	| { type: "setExportScale"; payload: number }
+	| { type: "setImageSrc"; payload: string }
+	| { type: "setFixedCanvasSize"; payload: { width: number; height: number } | null };
+
+function appReducer(state: AppState, action: AppAction): AppState {
+	switch (action.type) {
+		case "setSize":
+			return { ...state, size: action.payload, fixedCanvasSize: null };
+		case "setContrast":
+			return { ...state, contrast: action.payload };
+		case "setBrightness":
+			return { ...state, brightness: action.payload };
+		case "setColorPalette":
+			return { ...state, colorPalette: action.payload };
+		case "setBgColor":
+			return { ...state, bgColor: action.payload };
+		case "setCharColor":
+			return { ...state, charColor: action.payload };
+		case "setCharTint":
+			return { ...state, charTint: action.payload };
+		case "setTransparentBg":
+			return { ...state, transparentBg: action.payload };
+		case "setExportScale":
+			return { ...state, exportScale: action.payload };
+		case "setImageSrc":
+			return { ...state, imageSrc: action.payload, fixedCanvasSize: null };
+		case "setFixedCanvasSize":
+			return { ...state, fixedCanvasSize: action.payload };
+		default:
+			return state;
+	}
+}
+
+// Custom hook for debouncing a value
+function useDebouncedValue<T>(value: T, delay: number): T {
+	const [debouncedValue, setDebouncedValue] = useState(value);
+	useEffect(() => {
+		const handler = setTimeout(() => setDebouncedValue(value), delay);
+		return () => clearTimeout(handler);
+	}, [value, delay]);
+	return debouncedValue;
+}
+
 export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
-	// State for settings
-	const [charSet] = useState(defaultCharSet);
-	const [size, setSize] = useState(200);
-	// Store fixed canvas dimensions for consistent export output
-	const [fixedCanvasSize, setFixedCanvasSize] = useState<{ width: number; height: number } | null>(null);
-	const [charSamples] = useState(1);
-	const [contrast, setContrast] = useState(0);
-	const [brightness, setBrightness] = useState(0);
-	const [alpha] = useState(0);
-	const [colorPalette, setColorPalette] = useState<ColorPaletteValue>(
-		ColorPalette.Grey2Bit
-	);
-	const [bgColor, setBgColor] = useState("#ffffff");
-	const [charColor, setCharColor] = useState("#000000");
-	const [charTint, setCharTint] = useState(1); // Multiplier for char color brightness (0-2)
-	const [transparentBg, setTransparentBg] = useState(false);
-	const [exportScale, setExportScale] = useState(2);
+	const [state, dispatch] = useReducer(appReducer, {
+		size: 200,
+		contrast: 0,
+		brightness: 0,
+		colorPalette: ColorPalette.Grey2Bit,
+		bgColor: "#ffffff",
+		charColor: "#000000",
+		charTint: 1,
+		transparentBg: false,
+		exportScale: 2,
+		imageSrc: imageUrl || "",
+		fixedCanvasSize: null,
+	});
 
-	// State for image and processing data - using state for proper reactivity
-	const [imageSrc, setImageSrc] = useState(imageUrl || "");
-	const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
-	// Store raw value map and color map in state for proper reactivity
-	const [valueMap, setValueMap] = useState<number[][]>([]);
-	const [colorMap, setColorMap] = useState<number[][]>([]);
+	// Local state for immediate slider display (updated instantly, debounced before dispatch)
+	const [localSize, setLocalSize] = useState(state.size);
+	const [localContrast, setLocalContrast] = useState(state.contrast);
+	const [localBrightness, setLocalBrightness] = useState(state.brightness);
+	const [localCharTint, setLocalCharTint] = useState(state.charTint);
+	const [localExportScale, setLocalExportScale] = useState(state.exportScale);
 
+	// Debounced values that trigger expensive re-computation
+	const debouncedSize = useDebouncedValue(localSize, 100);
+	const debouncedContrast = useDebouncedValue(localContrast, 100);
+	const debouncedBrightness = useDebouncedValue(localBrightness, 100);
+	const debouncedCharTint = useDebouncedValue(localCharTint, 100);
+	const debouncedExportScale = useDebouncedValue(localExportScale, 100);
+
+	useEffect(() => { dispatch({ type: "setSize", payload: debouncedSize }); }, [debouncedSize]);
+	useEffect(() => { dispatch({ type: "setContrast", payload: debouncedContrast }); }, [debouncedContrast]);
+	useEffect(() => { dispatch({ type: "setBrightness", payload: debouncedBrightness }); }, [debouncedBrightness]);
+	useEffect(() => { dispatch({ type: "setCharTint", payload: debouncedCharTint }); }, [debouncedCharTint]);
+	useEffect(() => { dispatch({ type: "setExportScale", payload: debouncedExportScale }); }, [debouncedExportScale]);
+
+	// Processing data stored in refs (not state) to avoid re-renders during image processing
+	const valueMapRef = useRef<number[][]>([]);
+	const colorMapRef = useRef<number[][]>([]);
+	const imageDimensionsRef = useRef({ width: 0, height: 0 });
+	const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
+
+	// Canvas ref for preview rendering
+	const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
-	const outputContainerRef = useRef<HTMLDivElement>(null);
+
+	const charSamples = 1;
+	const alpha = 0;
 
 	// Helper functions for color conversion
 	const hexToRgb = useCallback((hex: string): number[] => {
@@ -118,16 +204,8 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			: [0, 0, 0];
 	}, []);
 
-	const rgbaToRgbArray = useCallback((rgbaStr: string): number[] => {
-		const match = rgbaStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-		if (match) {
-			return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
-		}
-		return [0, 0, 0];
-	}, []);
-
 	// Helper: analyze a single character
-	const analyzeChar = useCallback((char: string, charSamples: number) => {
+	const analyzeChar = useCallback((char: string, samples: number) => {
 		const canvas = document.createElement("canvas");
 		canvas.width = 12;
 		canvas.height = 12;
@@ -138,10 +216,10 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		ctx.fillText(char, 2, 10);
 		const data = ctx.getImageData(0, 0, 12, 12).data;
 		const values: number[] = [];
-		const sampleSize = 12 / charSamples;
+		const sampleSize = 12 / samples;
 
-		for (let cellY = 0; cellY < charSamples; cellY += 1) {
-			for (let cellX = 0; cellX < charSamples; cellX += 1) {
+		for (let cellY = 0; cellY < samples; cellY += 1) {
+			for (let cellX = 0; cellX < samples; cellX += 1) {
 				let value = 0;
 				for (let posY = 0; posY < sampleSize; posY += 1) {
 					for (let posX = 0; posX < sampleSize; posX += 1) {
@@ -182,13 +260,12 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 	// Compute normalized char regions using useMemo
 	const normalizedCharRegions = useMemo(() => {
 		const regions: Record<string, number[][]> = {};
-		for (const char of charSet) {
+		for (const char of defaultCharSet) {
 			const values = analyzeChar(char, charSamples);
-			// analyzeChar returns number[], we need number[][]
 			regions[char] = values.map(v => [v]);
 		}
 		return normalizeCharRegions(regions);
-	}, [charSet, charSamples, analyzeChar, normalizeCharRegions]);
+	}, [charSamples, analyzeChar, normalizeCharRegions]);
 
 	// Get closest character for a set of values
 	const getClosestChar = useCallback((values: number[]): string => {
@@ -208,35 +285,32 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		return minChar;
 	}, [normalizedCharRegions]);
 
-	// Convert color array to RGBA string with optional char tint
-	const arrayToRgba = useCallback((color: number[]): string => {
-		const r = color[3] > 0 ? Math.floor(color[0]) : 255;
-		const g = color[3] > 0 ? Math.floor(color[1]) : 255;
-		const b = color[3] > 0 ? Math.floor(color[2]) : 255;
+	// Convert color array to RGBA components
+	const getColorRgba = useCallback((color: number[], palette: ColorPaletteValue, tint: number, charColorHex: string): [number, number, number, number] => {
+		let r = color[3] > 0 ? Math.floor(color[0]) : 255;
+		let g = color[3] > 0 ? Math.floor(color[1]) : 255;
+		let b = color[3] > 0 ? Math.floor(color[2]) : 255;
 		const a = Math.max(0, Math.min(1, color[3] / 255 + alpha));
 
 		// Apply char tint if not monochrome
-		if (colorPalette !== ColorPalette.Monochrome && charTint !== 1) {
-			// Parse charColor to RGB
-			const charRgb = hexToRgb(charColor);
-			// Blend original color with char color based on tint value
-			const tintedR = Math.min(255, Math.floor(r * charTint + charRgb[0] * (1 - charTint)));
-			const tintedG = Math.min(255, Math.floor(g * charTint + charRgb[1] * (1 - charTint)));
-			const tintedB = Math.min(255, Math.floor(b * charTint + charRgb[2] * (1 - charTint)));
-			return `rgba(${tintedR},${tintedG},${tintedB},${a})`;
+		if (palette !== ColorPalette.Monochrome && tint !== 1) {
+			const charRgb = hexToRgb(charColorHex);
+			r = Math.min(255, Math.floor(r * tint + charRgb[0] * (1 - tint)));
+			g = Math.min(255, Math.floor(g * tint + charRgb[1] * (1 - tint)));
+			b = Math.min(255, Math.floor(b * tint + charRgb[2] * (1 - tint)));
 		}
 
-		return `rgba(${r},${g},${b},${a})`;
-	}, [alpha, colorPalette, charTint, charColor, hexToRgb]);
+		return [r, g, b, a];
+	}, [alpha, hexToRgb]);
 
-	// Get character color based on palette
-	const getCharColor = useCallback((color: number[]): string => {
-		if (colorPalette === ColorPalette.ColorFull) {
-			return arrayToRgba(color);
+	// Get character color based on palette - returns [r, g, b, a]
+	const getCharColorRgba = useCallback((color: number[], palette: ColorPaletteValue, tint: number, charColorHex: string): [number, number, number, number] => {
+		if (palette === ColorPalette.ColorFull) {
+			return getColorRgba(color, palette, tint, charColorHex);
 		} else {
 			let closestColor = [0, 0, 0];
 			let minDiff = Number.MAX_VALUE;
-			for (const paletteColor of colorPalettes[colorPalette]) {
+			for (const paletteColor of colorPalettes[palette]) {
 				const diff =
 					Math.abs(color[0] - paletteColor[0]) +
 					Math.abs(color[1] - paletteColor[1]) +
@@ -246,12 +320,13 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					closestColor = paletteColor;
 				}
 			}
-			return arrayToRgba([...closestColor, color[3]]);
+			return getColorRgba([...closestColor, color[3]], palette, tint, charColorHex);
 		}
-	}, [colorPalette, arrayToRgba]);
+	}, [getColorRgba]);
 
-	// Normalize value map with contrast and brightness - now uses state instead of ref
+	// Normalize value map with contrast and brightness
 	const normalizedMap = useMemo(() => {
+		const valueMap = valueMapRef.current;
 		if (valueMap.length === 0) return [];
 
 		let min = 1;
@@ -271,9 +346,9 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 				for (let index = 0; index < normals.length; index += 1) {
 					normals[index] = (normals[index] - min) * (1 / diff);
 					normals[index] =
-						(contrast + 1) * (normals[index] - 0.5) +
+						(state.contrast + 1) * (normals[index] - 0.5) +
 						0.5 +
-						brightness;
+						state.brightness;
 					// Clamp to valid range
 					normals[index] = Math.max(0, Math.min(1, normals[index]));
 				}
@@ -285,32 +360,36 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			}
 		}
 		return result;
-	}, [valueMap, contrast, brightness]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [state.contrast, state.brightness, valueMapRef.current]);
 
 	// Load and process image
 	const loadImageAndProcess = useCallback(() => {
-		if (!imageSrc) return;
+		if (!state.imageSrc) return;
 
 		const img = new Image();
 		img.crossOrigin = "anonymous";
-		img.src = imageSrc;
+		img.src = state.imageSrc;
 
 		img.onload = () => {
-			const width = size;
+			const width = state.size;
 			const baseImageAspectRatio = img.width / img.height;
 			const height = Math.floor(width / baseImageAspectRatio);
 
 			// Save the canvas dimensions on first load (for consistent export dimensions)
-			if (fixedCanvasSize === null) {
+			if (state.fixedCanvasSize === null) {
 				const charWidth = 4;
 				const charHeight = 4;
-				setFixedCanvasSize({
-					width: width * charWidth * exportScale,
-					height: height * charHeight * exportScale,
+				dispatch({
+					type: "setFixedCanvasSize",
+					payload: {
+						width: width * charWidth * state.exportScale,
+						height: height * charHeight * state.exportScale,
+					},
 				});
 			}
 
-			setImageDimensions({ width, height });
+			imageDimensionsRef.current = { width, height };
 
 			const canvas = document.createElement("canvas");
 			canvas.width = width * charSamples;
@@ -318,21 +397,10 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			const ctx = canvas.getContext("2d");
 			if (!ctx) return;
 
-			ctx.drawImage(
-				img,
-				0,
-				0,
-				width * charSamples,
-				height * charSamples
-			);
+			ctx.drawImage(img, 0, 0, width * charSamples, height * charSamples);
 
 			// Generate value and color maps
-			const imageData = ctx.getImageData(
-				0,
-				0,
-				width * charSamples,
-				height * charSamples
-			);
+			const imageData = ctx.getImageData(0, 0, width * charSamples, height * charSamples);
 			const data = imageData.data;
 			const rowLength = width * charSamples * 4;
 
@@ -342,14 +410,8 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 			for (let cellY = 0; cellY < height; cellY += 1) {
 				for (let cellX = 0; cellX < width; cellX += 1) {
 					const cell: number[] = [];
-					const pos =
-						cellX * charSamples * 4 + cellY * charSamples * rowLength;
-					newColorMap.push([
-						data[pos],
-						data[pos + 1],
-						data[pos + 2],
-						data[pos + 3],
-					]);
+					const pos = cellX * charSamples * 4 + cellY * charSamples * rowLength;
+					newColorMap.push([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
 
 					for (let posY = 0; posY < charSamples; posY += 1) {
 						for (let posX = 0; posX < charSamples; posX += 1) {
@@ -369,15 +431,72 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 				}
 			}
 
-			setValueMap(newValueMap);
-			setColorMap(newColorMap);
+			valueMapRef.current = newValueMap;
+			colorMapRef.current = newColorMap;
+			forceUpdate();
 		};
-	}, [imageSrc, size, charSamples, fixedCanvasSize, exportScale]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [state.imageSrc, state.size, state.exportScale, state.fixedCanvasSize === null, charSamples]);
 
-	// Trigger image reload when size or charSamples changes
+	// Trigger image reload when dependencies change
 	useEffect(() => {
 		loadImageAndProcess();
 	}, [loadImageAndProcess]);
+
+	// Draw to preview canvas whenever data changes (replaces DOM-based ASCII grid)
+	useEffect(() => {
+		const canvas = previewCanvasRef.current;
+		if (!canvas) return;
+
+		const { width, height } = imageDimensionsRef.current;
+		if (width === 0 || height === 0 || normalizedMap.length === 0) return;
+
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+
+		const scale = Math.max(window.devicePixelRatio || 2, 2);
+		const displayWidth = 800;
+		const cellSize = displayWidth / width;
+		const displayHeight = cellSize * height;
+
+		canvas.width = displayWidth * scale;
+		canvas.height = displayHeight * scale;
+		canvas.style.width = `${displayWidth}px`;
+		canvas.style.height = `${displayHeight}px`;
+
+		ctx.scale(scale, scale);
+		ctx.clearRect(0, 0, displayWidth, displayHeight);
+
+		// Fill background
+		if (!state.transparentBg) {
+			const bgColorRgb = hexToRgb(state.bgColor);
+			ctx.fillStyle = `rgb(${bgColorRgb[0]}, ${bgColorRgb[1]}, ${bgColorRgb[2]})`;
+			ctx.fillRect(0, 0, displayWidth, displayHeight);
+		}
+
+		// Set font
+		ctx.font = `500 ${cellSize}px 'Courier New', monospace`;
+		ctx.textBaseline = "top";
+
+		// Draw each character directly to canvas
+		for (let cellY = 0; cellY < height; cellY += 1) {
+			for (let cellX = 0; cellX < width; cellX += 1) {
+				const index = cellX + cellY * width;
+				const values = normalizedMap[index];
+				const char = getClosestChar(values);
+
+				if (state.colorPalette !== ColorPalette.Monochrome) {
+					const color = colorMapRef.current[index];
+					const [r, g, b] = getCharColorRgba(color, state.colorPalette, state.charTint, state.charColor);
+					ctx.fillStyle = `rgb(${r},${g},${b})`;
+				} else {
+					ctx.fillStyle = state.charColor;
+				}
+
+				ctx.fillText(char === " " ? "\u00A0" : char, cellX * cellSize, cellY * cellSize);
+			}
+		}
+	}, [normalizedMap, state.bgColor, state.transparentBg, state.charColor, state.colorPalette, state.charTint, getClosestChar, getCharColorRgba, hexToRgb]);
 
 	// Handle file upload
 	const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -385,25 +504,22 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		if (file) {
 			const reader = new FileReader();
 			reader.onload = (event) => {
-				setImageSrc(event.target?.result as string);
-				// Reset fixedCanvasSize when a new image is loaded
-				setFixedCanvasSize(null);
+				dispatch({ type: "setImageSrc", payload: event.target?.result as string });
 			};
 			reader.readAsDataURL(file);
 		}
 	};
 
-	// Handle download
-	const handleDownload = () => {
-		const { width, height } = imageDimensions;
-		if (width === 0 || height === 0 || normalizedMap.length === 0 || fixedCanvasSize === null) return;
+	// Handle PNG download
+	const handleDownloadPng = () => {
+		const { width, height } = imageDimensionsRef.current;
+		if (width === 0 || height === 0 || normalizedMap.length === 0 || state.fixedCanvasSize === null) return;
 
-		// Calculate char size to fit the fixed canvas dimensions
-		const scaledCharWidth = fixedCanvasSize.width / width / exportScale;
-		const scaledCharHeight = fixedCanvasSize.height / height / exportScale;
+		const scaledCharWidth = state.fixedCanvasSize.width / width / state.exportScale;
+		const scaledCharHeight = state.fixedCanvasSize.height / height / state.exportScale;
 
-		const canvasWidth = fixedCanvasSize.width;
-		const canvasHeight = fixedCanvasSize.height;
+		const canvasWidth = state.fixedCanvasSize.width;
+		const canvasHeight = state.fixedCanvasSize.height;
 
 		const canvas = document.createElement("canvas");
 		canvas.width = canvasWidth;
@@ -413,14 +529,14 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		if (!ctx) return;
 
 		// Fill background
-		if (!transparentBg) {
-			const bgColorRgb = hexToRgb(bgColor);
+		if (!state.transparentBg) {
+			const bgColorRgb = hexToRgb(state.bgColor);
 			ctx.fillStyle = `rgb(${bgColorRgb[0]}, ${bgColorRgb[1]}, ${bgColorRgb[2]})`;
 			ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 		}
 
 		// Set font
-		const fontSize = scaledCharWidth * exportScale;
+		const fontSize = scaledCharWidth * state.exportScale;
 		ctx.font = `${fontSize}px 'Courier New', monospace`;
 		ctx.textBaseline = "top";
 
@@ -431,23 +547,20 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 				const values = normalizedMap[index];
 				const char = getClosestChar(values);
 
-				// Set color
-				if (colorPalette !== ColorPalette.Monochrome) {
-					const color = colorMap[index];
-					const colorStr = getCharColor(color);
-					const colorRgb = rgbaToRgbArray(colorStr);
-					ctx.fillStyle = `rgb(${colorRgb[0]}, ${colorRgb[1]}, ${colorRgb[2]})`;
+				if (state.colorPalette !== ColorPalette.Monochrome) {
+					const color = colorMapRef.current[index];
+					const [r, g, b] = getCharColorRgba(color, state.colorPalette, state.charTint, state.charColor);
+					ctx.fillStyle = `rgb(${r},${g},${b})`;
 				} else {
-					ctx.fillStyle = charColor;
+					ctx.fillStyle = state.charColor;
 				}
 
-				const x = cellX * scaledCharWidth * exportScale;
-				const y = cellY * scaledCharHeight * exportScale;
+				const x = cellX * scaledCharWidth * state.exportScale;
+				const y = cellY * scaledCharHeight * state.exportScale;
 				ctx.fillText(char, x, y);
 			}
 		}
 
-		// Download
 		const link = document.createElement("a");
 		const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
 		link.download = `ascii-art-${timestamp}.png`;
@@ -455,52 +568,93 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 		link.click();
 	};
 
-	// Generate ASCII output
-	const asciiOutput = useMemo(() => {
-		const { width, height } = imageDimensions;
-		if (width === 0 || height === 0 || normalizedMap.length === 0) {
-			return null;
+	// XML escape helper for SVG
+	const escapeXml = (str: string): string => {
+		return str
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&apos;");
+	};
+
+	// Handle SVG download
+	const handleDownloadSvg = () => {
+		const { width, height } = imageDimensionsRef.current;
+		if (width === 0 || height === 0 || normalizedMap.length === 0) return;
+
+		const cellSize = 8;
+		const svgWidth = width * cellSize;
+		const svgHeight = height * cellSize;
+
+		let svg = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+		svg += `<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">\n`;
+
+		if (!state.transparentBg) {
+			svg += `  <rect width="${svgWidth}" height="${svgHeight}" fill="${state.bgColor}"/>\n`;
 		}
 
-		const cells: React.ReactNode[] = [];
 		for (let cellY = 0; cellY < height; cellY += 1) {
-			for (let cellX = 0; cellX < width; cellX += 1) {
-				const index = cellX + cellY * width;
-				const values = normalizedMap[index];
-				const char = getClosestChar(values);
-				const color =
-					colorPalette !== ColorPalette.Monochrome
-						? getCharColor(colorMap[index])
-						: charColor;
+			const y = (cellY + 1) * cellSize;
 
-				cells.push(
-					<span
-						key={`${cellX}-${cellY}`}
-						className="ascii-cell"
-						style={{
-							color: color,
-						}}
-					>
-						{char === " " ? "\u00A0" : char}
-					</span>
-				);
+			// Group consecutive same-color characters into single <text> with textLength
+			let runStart = 0;
+			let runColor = "";
+
+			for (let cellX = 0; cellX <= width; cellX += 1) {
+				let hexColor = "";
+
+				if (cellX < width) {
+					const index = cellX + cellY * width;
+
+					if (state.colorPalette !== ColorPalette.Monochrome) {
+						const colorArr = colorMapRef.current[index];
+						const [r, g, b] = getCharColorRgba(colorArr, state.colorPalette, state.charTint, state.charColor);
+						hexColor = `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+					} else {
+						hexColor = state.charColor;
+					}
+				}
+
+				if (cellX === 0) {
+					runStart = 0;
+					runColor = hexColor;
+					continue;
+				}
+
+				if (hexColor !== runColor || cellX === width) {
+					// Flush the current run
+					const runLen = cellX - runStart;
+					let runText = "";
+					for (let i = runStart; i < cellX; i++) {
+						const idx = i + cellY * width;
+						const vals = normalizedMap[idx];
+						const ch = getClosestChar(vals);
+						runText += ch === " " ? "\u00A0" : ch;
+					}
+					const x = runStart * cellSize;
+					const runWidth = runLen * cellSize;
+					svg += `  <text x="${x}" y="${y}" font-family="'Courier New', monospace" font-size="${cellSize}" font-weight="500" fill="${runColor}" textLength="${runWidth}" lengthAdjust="spacing">${escapeXml(runText)}</text>\n`;
+
+					runStart = cellX;
+					runColor = hexColor;
+				}
 			}
 		}
 
-		const containerWidth = 800;
-		const cellSize = containerWidth / width;
+		svg += `</svg>`;
 
-		return (
-			<div className="ascii-grid" style={{
-				backgroundColor: transparentBg ? "transparent" : bgColor,
-				"--width": width.toString(),
-				"--height": height.toString(),
-				"--cell-size": `${cellSize}px`,
-			} as React.CSSProperties}>
-				{cells}
-			</div>
-		);
-	}, [normalizedMap, imageDimensions, colorPalette, charColor, bgColor, transparentBg, colorMap, getClosestChar, getCharColor]);
+		const blob = new Blob([svg], { type: "image/svg+xml" });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+		const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
+		link.download = `ascii-art-${timestamp}.svg`;
+		link.href = url;
+		link.click();
+		URL.revokeObjectURL(url);
+	};
+
+	const hasImage = state.imageSrc && imageDimensionsRef.current.width > 0;
 
 	return (
 		<div className="flex h-screen w-full bg-background text-foreground">
@@ -535,63 +689,35 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 						</div>
 					</div>
 
-					{/* Character Set */}
-					{/* <div className="space-y-2">
-						<Label htmlFor="charset">Character Set</Label>
-						<Input
-							id="charset"
-							value={charSet}
-							onChange={(e) => setCharSet(e.target.value)}
-						/>
-					</div> */}
-
 					{/* Width */}
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="size">Width (chars)</Label>
-							<span className="text-xs text-muted-foreground">{size}</span>
+							<span className="text-xs text-muted-foreground">{localSize}</span>
 						</div>
 						<Slider
 							id="size"
 							min={50}
 							max={300}
-							value={[size]}
-							onValueChange={(values) => setSize(Array.isArray(values) ? values[0] : values)}
+							value={[localSize]}
+							onValueChange={(values) => setLocalSize(Array.isArray(values) ? values[0] : values)}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
-
-					{/* Char Samples */}
-					{/* <div className="space-y-2">
-						<div className="flex items-center justify-between">
-							<Label htmlFor="samples">Char Samples</Label>
-							<span className="text-xs text-muted-foreground">{charSamples}</span>
-						</div>
-						<input
-							id="samples"
-							type="range"
-							min="1"
-							max="3"
-							step="1"
-							value={charSamples}
-							onChange={(e) => setCharSamples(parseInt(e.target.value))}
-							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
-						/>
-					</div> */}
 
 					{/* Contrast */}
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="contrast">Contrast</Label>
-							<span className="text-xs text-muted-foreground">{contrast.toFixed(2)}</span>
+							<span className="text-xs text-muted-foreground">{localContrast.toFixed(2)}</span>
 						</div>
 						<Slider
 							id="contrast"
 							min={-1}
 							max={1}
 							step={0.01}
-							value={[contrast]}
-							onValueChange={(values) => setContrast(Array.isArray(values) ? values[0] : values)}
+							value={[localContrast]}
+							onValueChange={(values) => setLocalContrast(Array.isArray(values) ? values[0] : values)}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
@@ -600,51 +726,28 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="brightness">Brightness</Label>
-							<span className="text-xs text-muted-foreground">{brightness.toFixed(2)}</span>
+							<span className="text-xs text-muted-foreground">{localBrightness.toFixed(2)}</span>
 						</div>
 						<Slider
 							id="brightness"
 							min={-1}
 							max={1}
 							step={0.01}
-							value={[brightness]}
-							onValueChange={(values) => setBrightness(Array.isArray(values) ? values[0] : values)}
+							value={[localBrightness]}
+							onValueChange={(values) => setLocalBrightness(Array.isArray(values) ? values[0] : values)}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
-
-					{/* Alpha */}
-					{/* <div className="space-y-2">
-						<div className="flex items-center justify-between">
-							<Label htmlFor="alpha" title="Adjusts character transparency">
-								Alpha
-							</Label>
-							<span className="text-xs text-muted-foreground">{alpha.toFixed(2)}</span>
-						</div>
-						<input
-							id="alpha"
-							type="range"
-							min="-1"
-							max="1"
-							step="0.01"
-							value={alpha}
-							onChange={(e) => setAlpha(parseFloat(e.target.value))}
-							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
-						/>
-						<p className="text-[10px] text-muted-foreground">
-							Character transparency adjustment
-						</p>
-					</div> */}
 
 					{/* Color Palette */}
 					<div className="space-y-2">
 						<Label htmlFor="palette">Color Palette</Label>
 						<Select
-							value={colorPalette}
-							onValueChange={(value) => setColorPalette(value as ColorPaletteValue)}
+							value={state.colorPalette}
+							onValueChange={(value) => dispatch({ type: "setColorPalette", payload: value as ColorPaletteValue })}
 						>
 							<SelectTrigger id="palette" className="w-full">
-								<SelectValue>{colorPaletteNames[colorPalette]}</SelectValue>
+								<SelectValue>{colorPaletteNames[state.colorPalette]}</SelectValue>
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value={ColorPalette.Monochrome}>Monochrome</SelectItem>
@@ -659,25 +762,25 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					</div>
 
 					{/* Char Tint - only visible when color palette is active */}
-					{colorPalette !== ColorPalette.Monochrome && (
+					{state.colorPalette !== ColorPalette.Monochrome && (
 						<div className="space-y-2">
 							<div className="flex items-center justify-between">
 								<Label htmlFor="chartint" title="Blend character color with palette colors">
 									Char Tint
 								</Label>
-								<span className="text-xs text-muted-foreground">{charTint.toFixed(2)}</span>
+								<span className="text-xs text-muted-foreground">{localCharTint.toFixed(2)}</span>
 							</div>
 							<Slider
 								id="chartint"
 								min={0}
 								max={2}
 								step={0.05}
-								value={[charTint]}
-								onValueChange={(values) => setCharTint(Array.isArray(values) ? values[0] : values)}
+								value={[localCharTint]}
+								onValueChange={(values) => setLocalCharTint(Array.isArray(values) ? values[0] : values)}
 								className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 							/>
 							<p className="text-[10px] text-muted-foreground">
-								{charTint < 1 ? "Blend with character color (darker)" : charTint > 1 ? "Boost brightness" : "Original colors"}
+								{localCharTint < 1 ? "Blend with character color (darker)" : localCharTint > 1 ? "Boost brightness" : "Original colors"}
 							</p>
 						</div>
 					)}
@@ -687,8 +790,8 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 						<input
 							id="transparent-bg"
 							type="checkbox"
-							checked={transparentBg}
-							onChange={(e) => setTransparentBg(e.target.checked)}
+							checked={state.transparentBg}
+							onChange={(e) => dispatch({ type: "setTransparentBg", payload: e.target.checked })}
 							className="h-4 w-4 rounded border-input"
 						/>
 						<Label htmlFor="transparent-bg" className="cursor-pointer">
@@ -703,13 +806,13 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 							<input
 								id="bgcolor"
 								type="color"
-								value={bgColor}
-								onChange={(e) => setBgColor(e.target.value)}
+								value={state.bgColor}
+								onChange={(e) => dispatch({ type: "setBgColor", payload: e.target.value })}
 								className="h-8 w-14 rounded-lg cursor-pointer"
 							/>
 							<Input
-								value={bgColor}
-								onChange={(e) => setBgColor(e.target.value)}
+								value={state.bgColor}
+								onChange={(e) => dispatch({ type: "setBgColor", payload: e.target.value })}
 								className="flex-1"
 							/>
 						</div>
@@ -722,13 +825,13 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 							<input
 								id="charcolor"
 								type="color"
-								value={charColor}
-								onChange={(e) => setCharColor(e.target.value)}
+								value={state.charColor}
+								onChange={(e) => dispatch({ type: "setCharColor", payload: e.target.value })}
 								className="h-8 w-14 rounded cursor-pointer"
 							/>
 							<Input
-								value={charColor}
-								onChange={(e) => setCharColor(e.target.value)}
+								value={state.charColor}
+								onChange={(e) => dispatch({ type: "setCharColor", payload: e.target.value })}
 								className="flex-1"
 							/>
 						</div>
@@ -738,57 +841,49 @@ export function App({ imageUrl }: ASCIIGeneratorProps = {}) {
 					<div className="space-y-2">
 						<div className="flex items-center justify-between">
 							<Label htmlFor="export-scale">Export Scale</Label>
-							<span className="text-xs text-muted-foreground">x{exportScale}</span>
+							<span className="text-xs text-muted-foreground">x{localExportScale}</span>
 						</div>
 						<Slider
 							id="export-scale"
 							min={1}
 							max={10}
 							step={1}
-							value={[exportScale]}
-							onValueChange={(values) => setExportScale(Array.isArray(values) ? values[0] : values)}
+							value={[localExportScale]}
+							onValueChange={(values) => setLocalExportScale(Array.isArray(values) ? values[0] : values)}
 							className="w-full h-1.5 bg-input rounded-lg appearance-none cursor-pointer"
 						/>
 					</div>
 
-					{/* Download Button */}
-					<Button onClick={handleDownload} className="w-full">
-						<IconDownload className="size-4" />
-						Download PNG
-					</Button>
+					{/* Download Buttons */}
+					<div className="space-y-2">
+						<Button onClick={handleDownloadPng} className="w-full">
+							<IconDownload className="size-4" />
+							Download PNG
+						</Button>
+						<Button onClick={handleDownloadSvg} variant="outline" className="w-full">
+							<IconFileTypeSvg className="size-4" />
+							Download SVG
+						</Button>
+					</div>
 				</div>
 			</aside>
 
 			{/* Main Content */}
 			<main className="flex-1 flex items-center justify-center p-8 overflow-auto">
-				<div
-					ref={outputContainerRef}
-					className="inline-block border rounded-sm overflow-hidden"
-				>
-					{asciiOutput || (
+				<div className="inline-block border rounded-sm overflow-hidden">
+					{hasImage ? (
+						<canvas
+							ref={previewCanvasRef}
+							className="block"
+							style={{ maxWidth: "100%", maxHeight: "80vh" }}
+						/>
+					) : (
 						<div className="w-[800px] h-[600px] flex items-center justify-center text-muted-foreground">
 							Upload an image to generate ASCII art
 						</div>
 					)}
 				</div>
 			</main>
-
-			<style>{`
-        .ascii-grid {
-          display: grid;
-          grid-template-columns: repeat(var(--width, 200), var(--cell-size, 4px));
-          grid-template-rows: repeat(var(--height, 200), var(--cell-size, 4px));
-          font-family: 'Courier New', monospace;
-          font-size: var(--cell-size, 4px);
-          line-height: 1;
-        }
-        .ascii-cell {
-          display: block;
-          width: var(--cell-size, 4px);
-          height: var(--cell-size, 4px);
-          overflow: hidden;
-        }
-      `}</style>
 		</div>
 	);
 }
